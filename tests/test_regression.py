@@ -168,5 +168,36 @@ class StatusFilterTests(LedgerTestCase):
             reporting.invoices(self.db, 'overdue')
 
 
+class ExportAgreementTests(LedgerTestCase):
+    """BUSINESS_RULES: exported money must be accurate to two places and agree with the screen."""
+
+    def export_rows(self):
+        import csv as _csv
+        import io as _io
+        return list(_csv.DictReader(_io.StringIO(reporting.export_csv(self.db))))
+
+    def test_export_keeps_the_exact_cents_of_a_19_99_invoice(self):
+        row = next(r for r in self.export_rows() if r['invoice_number'] == 'INV-300')
+        self.assertEqual(row['amount'], '19.99')
+        self.assertEqual(row['paid'], '10.00')
+        self.assertEqual(row['balance'], '9.99')
+
+    def test_every_exported_row_agrees_with_the_same_record_on_screen(self):
+        screen = {(r['customer_id'], r['invoice_number']): r for r in reporting.invoices(self.db)}
+        for row in self.export_rows():
+            record = screen[(row['customer_id'], row['invoice_number'])]
+            for field in ('amount', 'paid', 'balance'):
+                self.assertEqual(row[field], f"{record[field]:.2f}",
+                                 f"{row['invoice_number']} {field} disagrees with the screen")
+            self.assertEqual(row['status'], record['status'])
+
+    def test_cents_survive_a_partial_payment(self):
+        self.import_csv('invoices', 'HARBOR,CENT-1,0.10,2026-09-20')
+        self.import_csv('payments', 'PAY-CENT,HARBOR,CENT-1,0.07')
+        self.assertAlmostEqual(self.invoice('CENT-1')['balance'], 0.03, places=2)
+        row = next(r for r in self.export_rows() if r['invoice_number'] == 'CENT-1')
+        self.assertEqual((row['amount'], row['paid'], row['balance']), ('0.10', '0.07', '0.03'))
+
+
 if __name__ == '__main__':
     unittest.main()

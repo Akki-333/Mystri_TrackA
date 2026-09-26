@@ -15,8 +15,12 @@ def invoices(db, status='all'):
     result = []
     for row in data:
         item = dict(row)
-        item['balance'] = item['amount'] - item['paid']
-        item['status'] = 'paid' if round(item['balance'], 2) <= 0 else 'open'
+        # Money is kept at currency precision so the screen, the API and the
+        # CSV export all report the same value for a record.
+        item['amount'] = round(item['amount'], 2)
+        item['paid'] = round(item['paid'], 2)
+        item['balance'] = round(item['amount'] - item['paid'], 2)
+        item['status'] = 'paid' if item['balance'] <= 0 else 'open'
         result.append(item)
     if status != 'all':
         # 'open' must return open invoices and 'paid' paid ones; each filter
@@ -44,6 +48,8 @@ def export_csv(db):
     for row in invoices(db):
         item = {k: row[k] for k in fields}
         for key in ('amount', 'paid', 'balance'):
-            item[key] = f"{int(item[key] * 100) / 100:.2f}"
+            # Format the reported value itself; int() truncation used to turn
+            # 19.99 into 19.98 and disagree with the screen.
+            item[key] = f"{item[key]:.2f}"
         writer.writerow(item)
     return output.getvalue()
