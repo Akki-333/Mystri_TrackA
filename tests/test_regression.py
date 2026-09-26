@@ -136,5 +136,37 @@ class RowLevelRejectionTests(LedgerTestCase):
         self.assertEqual([e['line'] for e in result['errors']], [3])
 
 
+class StatusFilterTests(LedgerTestCase):
+    """BUSINESS_RULES: open means a positive balance, paid means zero or negative."""
+
+    def test_open_filter_returns_only_open_invoices_and_agrees_with_the_overview(self):
+        open_rows = reporting.invoices(self.db, 'open')
+        self.assertTrue(open_rows)
+        self.assertEqual({r['status'] for r in open_rows}, {'open'})
+        self.assertEqual(len(open_rows), reporting.overview(self.db)['summary']['open_count'])
+
+    def test_paid_filter_returns_only_paid_invoices_and_all_is_the_union(self):
+        paid_rows = reporting.invoices(self.db, 'paid')
+        self.assertTrue(paid_rows)
+        self.assertEqual({r['status'] for r in paid_rows}, {'paid'})
+        self.assertEqual(len(reporting.invoices(self.db, 'all')),
+                         len(paid_rows) + len(reporting.invoices(self.db, 'open')))
+
+    def test_an_overpaid_invoice_is_paid_and_does_not_reduce_other_outstanding(self):
+        # INV-301 is 100.00 and unpaid; pay 150.00 against it.
+        outstanding_before = reporting.overview(self.db)['summary']['outstanding']
+        self.import_csv('payments', 'PAY-OVER,NORTH,INV-301,150.00')
+        invoice = self.invoice('INV-301')
+        self.assertEqual(invoice['status'], 'paid')
+        self.assertAlmostEqual(invoice['balance'], -50.00, places=2)
+        self.assertNotIn('INV-301', {r['invoice_number'] for r in reporting.invoices(self.db, 'open')})
+        summary = reporting.overview(self.db)['summary']
+        self.assertAlmostEqual(summary['outstanding'], outstanding_before - 100.00, places=2)
+
+    def test_invalid_status_is_rejected(self):
+        with self.assertRaises(ValueError):
+            reporting.invoices(self.db, 'overdue')
+
+
 if __name__ == '__main__':
     unittest.main()

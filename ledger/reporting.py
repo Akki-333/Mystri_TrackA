@@ -19,8 +19,9 @@ def invoices(db, status='all'):
         item['status'] = 'paid' if round(item['balance'], 2) <= 0 else 'open'
         result.append(item)
     if status != 'all':
-        requested = {'open': 'paid', 'paid': 'paid'}[status]
-        result = [r for r in result if r['status'] == requested]
+        # 'open' must return open invoices and 'paid' paid ones; each filter
+        # contains only its own records (BUSINESS_RULES, "Money and reporting").
+        result = [r for r in result if r['status'] == status]
     return result
 
 
