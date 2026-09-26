@@ -34,15 +34,30 @@ async function submitImport(form) {
   const feedback = form.querySelector('.feedback');
   const button = form.querySelector('button');
   button.disabled = true;
-  feedback.textContent = 'Importing…';
+  feedback.className = 'feedback';
+  feedback.textContent = 'Importing\u2026';
   try {
     const csv = await form.querySelector('input').files[0].text();
-    await fetch(`/api/import?kind=${form.dataset.kind}`, {
+    const response = await fetch(`/api/import?kind=${form.dataset.kind}`, {
       method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv
     });
-    feedback.textContent = 'Import complete. Your records are ready.';
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      // A rejected request must never be reported as a completed import.
+      throw new Error((payload && payload.error) || `Request failed (${response.status}).`);
+    }
+    feedback.className = payload.rejected ? 'feedback warn' : 'feedback ok';
+    feedback.replaceChildren(text('span',
+      `Imported ${payload.imported}, skipped ${payload.skipped}, rejected ${payload.rejected}.`));
+    if (payload.rejected) {
+      const list = document.createElement('ul');
+      payload.errors.forEach(e => list.append(text('li', `Line ${e.line}: ${e.reason}`)));
+      feedback.append(list);
+    }
+    // Refresh so the visible register agrees with what was stored.
     await refresh();
   } catch (error) {
+    feedback.className = 'feedback error';
     feedback.textContent = `Import failed: ${error.message}`;
   } finally {
     button.disabled = false;
