@@ -6,17 +6,25 @@ from .matching import find_invoice
 
 
 def import_csv(db, text, kind):
+    """Import one CSV body and report per-row outcomes.
+
+    An invalid header rejects the whole file and writes nothing. A bad data row
+    rejects only itself: the remaining rows are still processed and the row is
+    reported with its CSV line number (header is line 1) and a reason
+    (BUSINESS_RULES, "CSV imports").
+    """
     if kind not in HEADERS:
         raise ValueError('Unknown import kind')
-    reader = csv.DictReader(io.StringIO(text.lstrip('\ufeff')))
+    reader = csv.DictReader(io.StringIO(text.lstrip('﻿')))
     if reader.fieldnames != HEADERS[kind]:
         raise ValueError('Expected CSV header: ' + ','.join(HEADERS[kind]))
     customers = {r[0] for r in db.execute('SELECT customer_id FROM customers')}
-    rows = [normalize(row, kind, customers) for row in reader]
     result = {'imported': 0, 'skipped': 0, 'rejected': 0, 'errors': []}
     with db:
-        for line, row in enumerate(rows, 2):
+        for raw in reader:
+            line = reader.line_num
             try:
+                row = normalize(raw, kind, customers)
                 if kind == 'invoices':
                     outcome = insert_invoice(db, row)
                 else:

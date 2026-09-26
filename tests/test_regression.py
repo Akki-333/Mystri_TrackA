@@ -91,5 +91,50 @@ class InvoiceReimportTests(LedgerTestCase):
         self.assertAlmostEqual(self.invoice('DUP-1', 'MAPLE')['amount'], 42.00, places=2)
 
 
+class RowLevelRejectionTests(LedgerTestCase):
+    """BUSINESS_RULES: an invalid data row rejects only that row, with its CSV line number."""
+
+    def test_one_invalid_row_does_not_stop_the_valid_rows(self):
+        result = self.import_csv(
+            'invoices',
+            'HARBOR,INV-103,84.00,2026-09-12',
+            'NORTH,INV-302,not-a-number,2026-09-12',
+            'MAPLE,INV-203,100.00,2026-09-13')
+        self.assertEqual((result['imported'], result['skipped'], result['rejected']), (2, 0, 1))
+        self.assertEqual([e['line'] for e in result['errors']], [3])
+        self.assertTrue(result['errors'][0]['reason'])
+        numbers = {r['invoice_number'] for r in reporting.invoices(self.db)}
+        self.assertIn('INV-103', numbers)
+        self.assertIn('INV-203', numbers)
+        self.assertNotIn('INV-302', numbers)
+
+    def test_every_row_invalid_still_reports_counts_instead_of_failing(self):
+        result = self.import_csv('invoices',
+                                 'HARBOR,INV-901,-5.00,2026-09-12',
+                                 'GHOST,INV-902,10.00,2026-09-12',
+                                 'HARBOR,INV-903,10.00,12-09-2026')
+        self.assertEqual((result['imported'], result['skipped'], result['rejected']), (0, 0, 3))
+        self.assertEqual([e['line'] for e in result['errors']], [2, 3, 4])
+
+    def test_valid_header_with_no_rows_is_a_successful_empty_import(self):
+        result = self.import_csv('invoices')
+        self.assertEqual((result['imported'], result['skipped'], result['rejected']), (0, 0, 0))
+        self.assertEqual(result['errors'], [])
+
+    def test_invalid_header_rejects_the_whole_file_and_writes_nothing(self):
+        before = reporting.overview(self.db)['summary']
+        with self.assertRaises(ValueError):
+            importing.import_csv(self.db, 'customer,invoice,value\nHARBOR,INV-110,50.00\n', 'invoices')
+        self.assertEqual(reporting.overview(self.db)['summary'], before)
+
+    def test_payment_rows_are_also_rejected_individually(self):
+        result = self.import_csv('payments',
+                                 'PAY-201,MAPLE,INV-200,1250.00',
+                                 'PAY-BAD,MAPLE,INV-200,twelve',
+                                 'PAY-301,NORTH,INV-300,9.99')
+        self.assertEqual((result['imported'], result['skipped'], result['rejected']), (2, 0, 1))
+        self.assertEqual([e['line'] for e in result['errors']], [3])
+
+
 if __name__ == '__main__':
     unittest.main()
