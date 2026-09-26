@@ -62,5 +62,34 @@ class PaymentMatchingTests(LedgerTestCase):
         self.assertEqual(overview['summary']['outstanding'], 3209.99)
 
 
+class InvoiceReimportTests(LedgerTestCase):
+    """BUSINESS_RULES: identical re-import skips; reused identity with different details rejects."""
+
+    ROW = 'HARBOR,DUP-1,10.00,2026-09-09'
+
+    def test_identical_invoice_reimport_is_skipped_and_totals_do_not_move(self):
+        self.assertEqual(self.import_csv('invoices', self.ROW)['imported'], 1)
+        before = reporting.overview(self.db)['summary']
+        again = self.import_csv('invoices', self.ROW)
+        self.assertEqual((again['imported'], again['skipped'], again['rejected']), (0, 1, 0))
+        rows = [r for r in reporting.invoices(self.db) if r['invoice_number'] == 'DUP-1']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(reporting.overview(self.db)['summary'], before)
+
+    def test_same_identity_with_different_details_is_rejected_and_original_kept(self):
+        self.import_csv('invoices', self.ROW)
+        result = self.import_csv('invoices', 'HARBOR,DUP-1,99.00,2026-09-09')
+        self.assertEqual((result['imported'], result['skipped'], result['rejected']), (0, 0, 1))
+        self.assertEqual([e['line'] for e in result['errors']], [2])
+        kept = self.invoice('DUP-1')
+        self.assertAlmostEqual(kept['amount'], 10.00, places=2)
+
+    def test_same_invoice_number_under_a_different_customer_is_a_separate_invoice(self):
+        result = self.import_csv('invoices', self.ROW, 'MAPLE,DUP-1,42.00,2026-09-09')
+        self.assertEqual(result['imported'], 2)
+        self.assertAlmostEqual(self.invoice('DUP-1', 'HARBOR')['amount'], 10.00, places=2)
+        self.assertAlmostEqual(self.invoice('DUP-1', 'MAPLE')['amount'], 42.00, places=2)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -59,6 +59,20 @@ def invoice_by_key(db, customer_id, invoice_number):
 
 
 def insert_invoice(db, row):
+    """Insert an invoice, or skip/reject a re-use of an existing identity.
+
+    An invoice is identified by (customer_id, invoice_number). Re-importing the
+    same identity with the same amount and due date is skipped; re-using it with
+    different details is rejected and the stored invoice is left untouched
+    (BUSINESS_RULES, "Records and identity").
+    """
+    old = invoice_by_key(db, row['customer_id'], row['invoice_number'])
+    if old:
+        same = (round(old['amount'], 2) == round(row['amount'], 2)
+                and old['due_date'] == row['due_date'])
+        if same:
+            return 'skipped'
+        raise ValueError('Invoice already exists with a different amount or due date')
     db.execute('''INSERT INTO invoices (customer_id, invoice_number, amount, due_date)
                   VALUES (:customer_id, :invoice_number, :amount, :due_date)''', row)
     return 'imported'
