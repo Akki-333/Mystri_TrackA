@@ -84,6 +84,7 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual((body['imported'], body['skipped'], body['rejected']), (2, 0, 1))
         self.assertEqual([e['line'] for e in body['errors']], [3])
+        self.assertIn('NORTH,INV-302,not-a-number', body['rejected_csv'])
 
     def test_bad_header_returns_400_with_an_error_message(self):
         status, body = self.post_csv('invoices', (ROOT / 'samples' / 'wrong-header.csv').read_text())

@@ -20,6 +20,7 @@ def import_csv(db, text, kind):
         raise ValueError('Expected CSV header: ' + ','.join(HEADERS[kind]))
     customers = {r[0] for r in db.execute('SELECT customer_id FROM customers')}
     result = {'imported': 0, 'skipped': 0, 'rejected': 0, 'errors': []}
+    rejected_rows = []
     with db:
         for raw in reader:
             line = reader.line_num
@@ -33,4 +34,21 @@ def import_csv(db, text, kind):
             except ValueError as exc:
                 result['rejected'] += 1
                 result['errors'].append({'line': line, 'reason': str(exc)})
+                rejected_rows.append((raw, line, str(exc)))
+    # Extra response field (allowed by BUSINESS_RULES): the rejected rows as a
+    # CSV the owner can correct and re-import, instead of hunting line numbers.
+    result['rejected_csv'] = rejected_csv(kind, rejected_rows)
     return result
+
+
+def rejected_csv(kind, rejected_rows):
+    '''Return the rejected rows in the original column order, plus line and reason.'''
+    if not rejected_rows:
+        return ''
+    output = io.StringIO(newline='')
+    writer = csv.writer(output)
+    writer.writerow(HEADERS[kind] + ['line', 'reason'])
+    for raw, line, reason in rejected_rows:
+        values = [(raw.get(field) or '').strip() for field in HEADERS[kind]]
+        writer.writerow(values + [line, reason])
+    return output.getvalue()

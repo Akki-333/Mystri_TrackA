@@ -30,6 +30,18 @@ async function refresh() {
   document.querySelector('#page-error').textContent = '';
 }
 
+function rejectedDownload(kind, csv) {
+  // Hand back only the failed rows, with their reason, so the owner can correct
+  // that small file and re-import it instead of re-checking the whole export.
+  const link = document.createElement('a');
+  if (link.dataset.url) URL.revokeObjectURL(link.dataset.url);
+  link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  link.download = `rejected-${kind}.csv`;
+  link.className = 'button';
+  link.textContent = 'Download rejected rows';
+  return link;
+}
+
 async function submitImport(form) {
   const feedback = form.querySelector('.feedback');
   const button = form.querySelector('button');
@@ -53,6 +65,7 @@ async function submitImport(form) {
       const list = document.createElement('ul');
       payload.errors.forEach(e => list.append(text('li', `Line ${e.line}: ${e.reason}`)));
       feedback.append(list);
+      if (payload.rejected_csv) feedback.append(rejectedDownload(form.dataset.kind, payload.rejected_csv));
     }
     // Refresh so the visible register agrees with what was stored.
     await refresh();

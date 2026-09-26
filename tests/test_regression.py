@@ -199,5 +199,38 @@ class ExportAgreementTests(LedgerTestCase):
         self.assertEqual((row['amount'], row['paid'], row['balance']), ('0.10', '0.07', '0.03'))
 
 
+class RejectedRowsDownloadTests(LedgerTestCase):
+    """Improvement: an import returns its rejected rows as a correctable CSV."""
+
+    MIXED = ('HARBOR,INV-103,84.00,2026-09-12',
+             'NORTH,INV-302,not-a-number,2026-09-12',
+             'MAPLE,INV-203,100.00,2026-09-13')
+
+    def test_rejected_rows_come_back_as_csv_with_the_reason(self):
+        result = self.import_csv('invoices', *self.MIXED)
+        lines = result['rejected_csv'].strip().splitlines()
+        self.assertEqual(lines[0], 'customer_id,invoice_number,amount,due_date,line,reason')
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[1].startswith('NORTH,INV-302,not-a-number,2026-09-12,3,'))
+
+    def test_a_clean_import_returns_no_rejected_csv(self):
+        result = self.import_csv('invoices', 'HARBOR,INV-104,12.00,2026-09-14')
+        self.assertEqual(result['rejected'], 0)
+        self.assertEqual(result['rejected_csv'], '')
+
+    def test_correcting_the_downloaded_rows_and_reimporting_the_file_is_safe(self):
+        # The corrected file can be re-imported whole: the fixed row imports,
+        # the rows that already landed are skipped, and no total moves twice.
+        first = self.import_csv('invoices', *self.MIXED)
+        self.assertEqual((first['imported'], first['rejected']), (2, 1))
+        corrected = ('HARBOR,INV-103,84.00,2026-09-12',
+                     'NORTH,INV-302,55.00,2026-09-12',
+                     'MAPLE,INV-203,100.00,2026-09-13')
+        second = self.import_csv('invoices', *corrected)
+        self.assertEqual((second['imported'], second['skipped'], second['rejected']), (1, 2, 0))
+        self.assertAlmostEqual(self.invoice('INV-302')['amount'], 55.00, places=2)
+        self.assertEqual(len(reporting.invoices(self.db)), 9)
+
+
 if __name__ == '__main__':
     unittest.main()
