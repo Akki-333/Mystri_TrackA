@@ -11,33 +11,30 @@
 Python 3.10+ only; no third-party dependencies added.
 
 ```text
-cd Mystri_TrackA
 python -m unittest discover -s tests -v          # 34 tests, all passing
 python restore_fixture.py --replace              # owner's existing register (app stopped)
 python app.py                                    # http://127.0.0.1:8787
 ```
 
-Failing-before / passing-after, using the untouched starter commit:
+Changed-input case (explained under Evidence):
 
 ```text
-git archive 0843232 | tar -x -C ../clearledger-before   # starter code
-cp -r tests ../clearledger-before/                      # my tests against it
+python scripts/changed_input_demo.py
+# observed: MAPLE/INV-200 paid=1250.00, HARBOR/INV-100 paid=0.00, outstanding 1959.99
+```
+
+Failing-before / passing-after, running my tests against the untouched starter commit:
+
+```text
+mkdir ../clearledger-before
+git archive 0843232 | tar -x -C ../clearledger-before
+cp -r tests ../clearledger-before/
 cd ../clearledger-before && python -m unittest discover -s tests
 # observed: Ran 34 tests, FAILED (failures=12, errors=6)
 ```
 
-Changed-input case (details below):
-
-```text
-python - <<'PY'
-from ledger import storage, reporting, importing
-import tempfile; from pathlib import Path
-db = storage.connect(Path(tempfile.mkdtemp())/'d.sqlite3'); storage.seed(db)
-importing.import_csv(db, 'payment_id,customer_id,invoice_number,amount\nPAY-201,MAPLE,INV-200,1250.00\n', 'payments')
-print([(r['customer_id'], r['invoice_number'], r['paid']) for r in reporting.invoices(db)
-       if r['invoice_number'] in ('INV-100','INV-200')])
-PY
-```
+The supplied `README.md` is kept unchanged as `TRACK_A_BRIEF.md`; `README.md` is now a
+short guide to this submission.
 
 ## What I delivered
 
